@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare Networks Between Cities</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chosen/1.8.7/chosen.min.css" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chosen/1.8.7/chosen.jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="logo">NPIP</div>
+        
+    </header>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <button class="closebtn" onclick="closeNav()">×</button>
+        <a href="{{ url_for('index') }}">Dashboard</a>
+        <a href="{{ url_for('compare_city') }}">Compare City</a>
+        <a class="active" href="{{ url_for('compare_multiple_networks') }}">Compare Multiple Networks</a>
+        <a href="{{ url_for('time_analysis') }}">Time Analysis</a>
+    </div>
+
+    <!-- Open Sidebar Button -->
+    <span class="openbtn" id="openSidebar" onclick="openNav()">☰</span>
+
+    <main role="main">
+        <h1>Compare Multiple Networks in Two Cities</h1>
+
+        <form method="POST">
+            <div class="city-selection">
+                <div>
+                    <label for="city1">Select First City:</label>
+                    <select name="city1" id="city1" required class="chosen-select">
+                        <option value="">Select City</option>
+                        {% for city in available_cities %}
+                            <option value="{{ city }}" {% if city == selected_city1 %}selected{% endif %}>{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="city2">Select Second City:</label>
+                    <select name="city2" id="city2" required class="chosen-select">
+                        <option value="">Select City</option>
+                        {% for city in available_cities %}
+                            <option value="{{ city }}" {% if city == selected_city2 %}selected{% endif %}>{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="network-selection">
+                <div id="networks1">
+                    <h3>Networks in <span id="city1-name">First City</span></h3>
+                    <select name="networks1[]" id="networks1-select" class="chosen-select" multiple></select>
+                </div>
+
+                <div id="networks2">
+                    <h3>Networks in <span id="city2-name">Second City</span></h3>
+                    <select name="networks2[]" id="networks2-select" class="chosen-select" multiple></select>
+                </div>
+            </div>
+
+            <button type="submit" id="compare-button">Compare Networks</button>
+        </form>
+
+        {% if results is defined and not results.empty %}
+        <h2>Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>City</th>
+                    <th>Network (ISP)</th>
+                    <th>Average Download Speed (Mbps)</th>
+                    <th>Average Upload Speed (Mbps)</th>
+                    <th>Average Latency (ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for _, row in results.iterrows() %}
+                    <tr>
+                        <td>{{ row['city'] }}</td>
+                        <td>{{ row['isp'] }}</td>
+                        <td>{{ row['avg_download_mbps']|float|round(2) if row['avg_download_mbps'] is not none else 'N/A' }}</td>
+                        <td>{{ row['avg_upload_mbps']|float|round(2) if row['avg_upload_mbps'] is not none else 'N/A' }}</td>
+                        <td>{{ row['avg_latency']|float|round(2) if row['avg_latency'] is not none else 'N/A' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+            <div id="histogramContainer">
+                <canvas id="histogramCanvas" width="400" height="600"></canvas>
+            </div>
+            <div id="histogramContainer">
+                <canvas id="latencyCanvas" width="400" height="600"></canvas>
+            </div>
+
+        {% endif %}
+        
+    
+
+    <footer>
+        © 2024 NPIP | <a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a>
+    </footer>
+
+    <script>
+        $(document).ready(function() {
+            $('.chosen-select').chosen({ width: '100%' });
+
+            const city1Select = $('#city1');
+            const city2Select = $('#city2');
+            const networks1Select = $('#networks1-select');
+            const networks2Select = $('#networks2-select');
+            const city1Name = $('#city1-name');
+            const city2Name = $('#city2-name');
+
+            function updateNetworks(citySelect, networksSelect, cityNameSpan) {
+                const selectedCity = citySelect.val();
+                cityNameSpan.text(selectedCity || "First City");
+
+                if (selectedCity) {
+                    fetch(`/get_networks?city1=${selectedCity}`)
+                        .then(response => response.json())
+                        .then(networks => {
+                            networksSelect.empty();
+                            networks.forEach(network => {
+                                networksSelect.append(`<option value="${network}">${network}</option>`);
+                            });
+                            networksSelect.trigger("chosen:updated");
+                        });
+                } else {
+                    networksSelect.empty();
+                    networksSelect.trigger("chosen:updated");
+                }
+            }
+
+            city1Select.change(() => updateNetworks(city1Select, networks1Select, city1Name));
+            city2Select.change(() => updateNetworks(city2Select, networks2Select, city2Name));
+
+            // Set initial city names
+            city1Name.text("First City");
+            city2Name.text("Second City");
+
+            if (city1Select.val()) updateNetworks(city1Select, networks1Select, city1Name);
+            if (city2Select.val()) updateNetworks(city2Select, networks2Select, city2Name);
+
+
+            // Create arrays for the cities and the ISPs
+            const cities = [];
+            const isps = [];
+            const downloadSpeeds = [];
+            const uploadSpeeds = [];
+            const latencies = [];
+
+            // Loop through the table rows to extract the city, ISP, and performance data
+            $('tbody tr').each(function() {
+                const cells = $(this).find('td');
+                const city = cells.eq(0).text();
+                const isp = cells.eq(1).text();
+                
+                // Combine city and ISP for labeling purposes
+                cities.push(`${city} - ${isp}`);
+                
+                // Add data for download, upload, and latency
+                downloadSpeeds.push(parseFloat(cells.eq(2).text()));  // Download speed
+                uploadSpeeds.push(parseFloat(cells.eq(3).text()));    // Upload speed
+                latencies.push(parseFloat(cells.eq(4).text()));       // Latency
+            });
+
+            // Render the grouped bar chart
+            const ctx = document.getElementById('histogramCanvas').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: cities, // Use combined city and ISP as the labels
+                    datasets: [
+                        {
+                            label: 'Average Download Speed (Mbps)',
+                            data: downloadSpeeds,
+                            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Average Upload Speed (Mbps)',
+                            data: uploadSpeeds,
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        },
+                        x: {
+                            ticks: {
+                                autoSkip: false, // Ensure all city-ISP combinations show up
+                                maxRotation: 90, // Rotate labels if needed
+                                minRotation: 45
+                            }
+                        }
+                    },
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.raw || '';
+                                    return `${label}: ${value}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            
+            });
+            const ctz = document.getElementById('latencyCanvas').getContext('2d');
+            new Chart(ctz, {
+                type: 'bar',
+                data: {
+                    labels: cities, // Use combined city and ISP as the labels
+                    datasets: [
+                        {
+                            label: 'Average Latency (ms)',
+                            data: latencies,
+                            backgroundColor: 'rgba(255, 206, 86, 0.6)',
+                            borderColor: 'rgba(255, 206, 86, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        },
+                        x: {
+                            ticks: {
+                                autoSkip: false, // Ensure all city-ISP combinations show up
+                                maxRotation: 90, // Rotate labels if needed
+                                minRotation: 45
+                            }
+                        }
+                    },
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.raw || '';
+                                    return `${label}: ${value}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+        });
+        </script>
+    <script>
+        function openNav() {
+            document.getElementById("sidebar").classList.add("expanded");
+        }
+
+        function closeNav() {
+            document.getElementById("sidebar").classList.remove("expanded");
+        }
+    </script>
+    </main>
+</body>
+</html>

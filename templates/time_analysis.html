@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Analysis - NPIP</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chosen/1.8.7/chosen.min.css" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chosen/1.8.7/chosen.jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="logo">NPIP</div>
+        
+    </header>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <button class="closebtn" onclick="closeNav()">×</button>
+        <a href="{{ url_for('index') }}">Dashboard</a>
+        <a href="{{ url_for('compare_city') }}">Compare City</a>
+        <a href="{{ url_for('compare_multiple_networks') }}">Compare Multiple Networks</a>
+        <a class="active" href="{{ url_for('time_analysis') }}">Time Analysis</a>
+    </div>
+
+    <!-- Open Sidebar Button -->
+    <span class="openbtn" id="openSidebar" onclick="openNav()">☰</span>
+
+    <main role="main">
+        <h1>Network Performance Time Analysis</h1>
+
+        <form method="POST">
+            <div class="city-selection">
+                <div>
+                    <label for="city">Select City:</label>
+                    <select name="city" id="city" required class="chosen-select">
+                        <option value="">Select a City</option>
+                        {% for city in available_cities %}
+                            <option value="{{ city }}" {% if city == selected_city1 %}selected{% endif %}>{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+
+            <div id="network-container">
+                <p>Select Network:</p>
+                    <select name="network" id="networkSelect" class="chosen-select">
+                        <!-- Options will be populated here -->
+                    </select>
+            </div>
+
+            <div>
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" value="{{ start_date }}" required>
+            </div>
+
+            <div>
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" value="{{ end_date }}" required>
+            </div>
+
+            <button type="submit" id="compare-button">Analyze</button>
+        </form>
+        
+        
+
+        {% if not results.empty %}
+        <h2>
+            Network Performance of {{ selected_network }} in {{ selected_city }} 
+            between {{ start_date.strftime('%Y-%m-%d') }} and {{ end_date.strftime('%Y-%m-%d') }}
+        </h2>
+            <div id="performance_chart"></div>
+            
+
+            <script>
+                var dates = {{ results['date'].dt.strftime('%Y-%m-%d').tolist()|tojson }};
+                var download_speeds = {{ results['avg_download_mbps'].tolist()|tojson }};
+                var upload_speeds = {{ results['avg_upload_mbps'].tolist()|tojson }};
+                var latencies = {{ results['avg_latency'].tolist()|tojson }};
+
+                var trace1 = {
+                    x: dates,
+                    y: download_speeds,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Download Speed'
+                };
+
+                var trace2 = {
+                    x: dates,
+                    y: upload_speeds,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Upload Speed'
+                };
+
+                var trace3 = {
+                    x: dates,
+                    y: latencies,
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    name: 'Latency',
+                    yaxis: 'y2'
+                };
+
+                var layout = {
+                    title: 'Network Performance Over Time',
+                    xaxis: {title: 'Date'},
+                    yaxis: {title: 'Speed (Mbps)'},
+                    yaxis2: {
+                        title: 'Latency (ms)',
+                        overlaying: 'y',
+                        side: 'right'
+                    }
+                };
+
+                var data = [trace1, trace2, trace3];
+
+                Plotly.newPlot('performance_chart', data, layout);
+            </script>
+        {% endif %}
+    </main>
+
+    <footer>
+        © 2024 NPIP | <a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+    const citySelect = document.getElementById('city');
+    const networkContainer = document.getElementById('networkSelect');
+    window.onload = getLocation;
+
+    // Geolocation detection
+    function getLocation() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(showPosition, showError);
+        } else {
+            citySelect.innerHTML = "<option value=''>Geolocation not supported</option>";
+        }
+    }
+
+    function showPosition(position) {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        getCityFromCoordinates(lat, lon);
+    }
+
+    function showError(error) {
+        
+    }
+
+    function getCityFromCoordinates(lat, lon) {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`;
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                const city = data.address.city || data.address.town || data.address.village || 'Unknown';
+                selectCity(city);
+            })
+            .catch(err => console.error(err));
+    }
+
+    function selectCity(city) {
+                    let found = false;
+                    for (let i = 0; i < citySelect.options.length; i++) {
+                        if (citySelect.options[i].value === city) {
+                            citySelect.selectedIndex = i;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        citySelect.innerHTML = `<option value='${city}'>${city} (Detected)</option>`;
+                    }
+                    
+    }
+
+
+    
+    
+    
+    $(networkSelect).chosen({
+    no_results_text: "No networks found!",
+    width: "100%"
+    });
+
+    citySelect.addEventListener('change', function() {
+        const selectedCity = this.value;
+
+        // Clear previous options
+        networkSelect.innerHTML = '';
+
+        if (selectedCity) {
+            fetch(`/get_networks?city1=${selectedCity}`)
+                .then(response => response.json())
+                .then(networks => {
+                    networks.forEach(network => {
+                        const option = document.createElement('option');
+                        option.value = network;
+                        option.textContent = network;
+                        networkSelect.appendChild(option);
+                    });
+
+                    // Trigger Chosen to update with new options
+                    $(networkSelect).trigger("chosen:updated");
+                });
+        }
+    });
+    
+
+
+    // Trigger change event if a city is already selected (e.g., after form submission)
+    if (citySelect.value) {
+        citySelect.dispatchEvent(new Event('change'));
+    }
+});
+    
+    </script>
+    <script>
+        // Function to open sidebar
+        function openNav() {
+            document.getElementById("sidebar").classList.add("expanded");
+        }
+    
+        // Function to close sidebar
+        function closeNav() {
+            document.getElementById("sidebar").classList.remove("expanded");
+        }
+        </script>
+</body>
+</html>
+

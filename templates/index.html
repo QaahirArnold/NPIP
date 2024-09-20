@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to NPIP</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="logo">NPIP</div>
+        
+    </header>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <button class="closebtn" onclick="closeNav()">×</button>
+        <a class="active" href="{{ url_for('index') }}">Dashboard</a>
+        <a href="{{ url_for('compare_city') }}">Compare City</a>
+        <a href="{{ url_for('compare_multiple_networks') }}">Compare Multiple Networks</a>
+        <a href="{{ url_for('time_analysis') }}">Time Analysis</a>
+    </div>
+
+    <!-- Open Sidebar Button -->
+    <span class="openbtn" id="openSidebar" onclick="openNav()">☰</span>
+    
+
+    <!-- Main Content Area -->
+    <main>
+        
+        <section class="welcome-screen">
+            <h1>Welcome to the Network Performance Insights Platform</h1>
+            <p>Get insights into network performance in cities and across networks. Use the sidebar to navigate through different comparisons or explore the dashboard for an overview.</p>
+            <div id="message">Let's see what the networks are like in your city!</div>
+        </section>
+        <!-- Message -->
+        
+        <div class="container">
+            <!-- Graphs -->
+            <div class="inchart" id="speed_chart" style="color:black; text-align: center; margin-top: 25%;">Loading...</div>
+            
+            
+            <div class="speedtest-widget">
+                <iframe src="//openspeedtest.com/speedtest"></iframe>
+
+            </div>
+        </div>
+        <div id="latency_chart" style="height: 500px;"></div>
+
+        <section>
+
+            <p style="text-align: center;">Wondering about the performance of some other networks in you city? Click below to explore more!</p>
+            <a href="{{ url_for('compare_city') }}" class="button">Compare Local Networks</a>
+            <p style="text-align: center;">Location, location... Want to find out how your speed compares to other parts of Africa? Click below to explore more!</p>
+            <a href="{{ url_for('compare_multiple_networks') }}" class="button">Continental Comparison</a>
+            <p style="text-align: center;">Only time can tell... To see how any networks performed over time, Click below to explore more!</p>
+            <a href="{{ url_for('time_analysis') }}" class="button">Networks over Time</a>
+
+        </section>
+
+
+
+
+    <script>
+        // Get user's coordinates and reverse geocode to detect the city
+        // Get user's coordinates
+        function getLocation() {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(showPosition, showError);
+                } else {
+                    document.getElementById('message').innerText = "Geolocation is not supported by this browser.";
+                    fetchTopCitiesInAfrica();
+                }
+            }
+    
+        // This function is called when the location is successfully retrieved
+        function showPosition(position) {
+            let lat = position.coords.latitude;
+            let lon = position.coords.longitude;
+            console.log("Latitude: " + lat + ", Longitude: " + lon);
+            
+            // You can now call a reverse geocoding service to get the city
+            getCityFromCoordinates(lat, lon);
+        }
+
+        // Error handler for Geolocation
+        function showError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    document.getElementById('message').innerText = "Looks like we can't see what city you're in. Showing top cities in Africa.";
+                    fetchTopCitiesInAfrica();
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    document.getElementById('message').innerText = "Location information is unavailable.";
+                    fetchTopCitiesInAfrica();
+                    break;
+                case error.TIMEOUT:
+                    document.getElementById('message').innerText = "The request to get user location timed out.";
+                    fetchTopCitiesInAfrica();
+                    break;
+                case error.UNKNOWN_ERROR:
+                    document.getElementById('message').innerText = "An unknown error occurred.";
+                    fetchTopCitiesInAfrica();
+                    break;
+            }
+        }
+
+        // Get the city name from latitude and longitude using OpenStreetMap's Nominatim API
+        function getCityFromCoordinates(lat, lon) {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    let city = data.address.city || data.address.town || data.address.village || 'Unknown';
+                    document.getElementById('message').innerText = "According to our latest statistics, these are the top networks in your city, " + city+"!";
+
+                    if (city != 'Unknown') {
+                        fetchTopNetworksInCity(city);  // Fetch top networks in the detected city
+                    } else {
+                        document.getElementById('message').innerText = "Could not detect your city. Showing top cities in Africa.";
+                        fetchTopCitiesInAfrica();  // Fallback to top cities if city cannot be detected
+                    }
+                })
+                .catch(err => console.error(err));
+        }
+
+        
+
+        //Fetch top networks in the detected city
+        function fetchTopNetworksInCity(city) {
+            fetch(`/get_top_networks_in_city?city=${city}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Received data:", data);  // Debug log
+                    if (data && data.length > 0) {
+                        displayGraphs(data, `Top 5 Networks in ${city}`);
+                    } else {
+                        console.log("No data received for the city, fetching top cities in Africa");  // Debug log
+                        fetchTopCitiesInAfrica();  // If no networks found, show top cities in Africa
+                    }
+                })
+                .catch(err => {
+                    console.error("Error fetching networks: ", err);
+                    fetchTopCitiesInAfrica();  // Fallback to top cities on error
+                });
+        }
+
+        // Fetch top cities in Africa if no location is detected
+        function fetchTopCitiesInAfrica() {
+            fetch('/get_top_cities_in_africa')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Received top cities data:", data);  // Debug log
+                    displayGraphs(data, "Top 5 Cities in Africa");
+                })
+                .catch(err => console.error("Error fetching top cities: ", err));
+        }
+
+        
+
+
+
+        // Function to display the graphs
+        function displayGraphs(data, title) {
+        console.log("Displaying graphs with data:", data);  // Debug log
+        
+        if (!data || data.length === 0) {
+            console.error("No data to display");
+            return;
+        }
+
+        let cities_or_networks = data.map(item => item.name);
+        let download_speeds = data.map(item => item.avg_download_mbps);
+        let upload_speeds = data.map(item => item.avg_upload_mbps);
+        let latencies = data.map(item => item.avg_latency);
+
+        // Create bar chart for download and upload speeds
+        var trace1 = {
+            x: cities_or_networks,
+            y: download_speeds,
+            name: 'Download Speed (Mbps)',
+            type: 'bar'
+        };
+
+        var trace2 = {
+            x: cities_or_networks,
+            y: upload_speeds,
+            name: 'Upload Speed (Mbps)',
+            type: 'bar'
+        };
+
+        var speedLayout = {
+            title: `${title} - Upload and Download Speeds`,
+            barmode: 'group',
+            xaxis: { title: 'City/Network' },
+            yaxis: { title: 'Speed (Mbps)' }
+        };
+
+        document.getElementById('speed_chart').innerText = "";
+        document.getElementById('speed_chart').style.marginTop= "0%";
+        Plotly.newPlot('speed_chart', [trace1, trace2], speedLayout);
+        
+
+        // Create bar chart for latency
+        var trace3 = {
+            x: cities_or_networks,
+            y: latencies,
+            name: 'Latency (ms)',
+            type: 'bar'
+        };
+
+        var latencyLayout = {
+            title: `${title} - Latency`,
+            xaxis: { title: 'City/Network' },
+            yaxis: { title: 'Latency (ms)' }
+        };
+
+        Plotly.newPlot('latency_chart', [trace3], latencyLayout);
+
+        console.log("Graphs should be displayed now");
+        }
+
+        window.onload = function() {
+            console.log("Window loaded, getting location");
+            getLocation();
+        }
+
+       
+    </script>
+    <script>
+        // Function to open sidebar
+        function openNav() {
+            document.getElementById("sidebar").classList.add("expanded");
+        }
+    
+        // Function to close sidebar
+        function closeNav() {
+            document.getElementById("sidebar").classList.remove("expanded");
+        }
+    </script>
+
+    </main>
+
+</body>
+</html>

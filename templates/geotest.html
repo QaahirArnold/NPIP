@@ -1,0 +1,96 @@
+AIzaSyCYxY-QE41H8jrwCA2545OkRa_UCpSVryQ
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Locator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+        }
+        #city {
+            font-size: 1.5em;
+            color: #27ae60;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div>
+        <h1>Welcome to the City Locator</h1>
+        <p id="city">Detecting your city...</p>
+    </div>
+
+    <script>
+        // Get user's coordinates
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(showPosition, showError);
+            } else {
+                document.getElementById('city').innerText = "Geolocation is not supported by this browser.";
+            }
+        }
+
+        // This function is called when the location is successfully retrieved
+        function showPosition(position) {
+            let lat = position.coords.latitude;
+            let lon = position.coords.longitude;
+            console.log("Latitude: " + lat + ", Longitude: " + lon);
+            
+            // You can now call a reverse geocoding service to get the city
+            getCityFromCoordinates(lat, lon);
+        }
+
+        // Error handler for Geolocation
+        function showError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    document.getElementById('city').innerText = "User denied the request for Geolocation.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    document.getElementById('city').innerText = "Location information is unavailable.";
+                    break;
+                case error.TIMEOUT:
+                    document.getElementById('city').innerText = "The request to get user location timed out.";
+                    break;
+                case error.UNKNOWN_ERROR:
+                    document.getElementById('city').innerText = "An unknown error occurred.";
+                    break;
+            }
+        }
+
+        // Get the city name from latitude and longitude using OpenStreetMap's Nominatim API
+        function getCityFromCoordinates(lat, lon) {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    let city = data.address.city || data.address.town || data.address.village || 'Unknown';
+                    document.getElementById('city').innerText = "You are in: " + city;
+                })
+                .catch(err => console.error(err));
+        }
+
+        // Call the getLocation function when the page loads
+        window.onload = function() {
+            getLocation();
+        }
+    </script>
+
+</body>
+</html>

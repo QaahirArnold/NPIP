@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare Networks Between Cities</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="logo">NPIP</div>
+        
+    </header>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <button class="closebtn" onclick="closeNav()">×</button>
+        <a href="{{ url_for('index') }}">Dashboard</a>
+        <a href="{{ url_for('compare_city') }}">Compare City</a>
+        <a class="active" href="{{ url_for('compare_networks') }}">Compare Networks</a>
+        <a href="{{ url_for('compare_multiple_networks') }}">Compare Multiple Networks</a>
+        <a href="{{ url_for('time_analysis') }}">Time Analysis</a>
+    </div>
+
+    <!-- Open Sidebar Button -->
+    <span class="openbtn" id="openSidebar" onclick="openNav()">☰</span>
+    
+    <!-- Main Content Area -->
+    <main>
+        <div>
+            <h1>Compare Networks Between Two Cities</h1>
+        
+            <form method="POST">
+                <label for="city1">Your City (Auto-detected):</label>
+                <select name="city1" id="city1" required>
+                    <option value="">Detecting your city...</option>
+                    {% for city in available_cities %}
+                        <option value="{{ city }}">{{ city }}</option>
+                    {% endfor %}
+                </select>
+        
+                <label for="city2">Select Second City:</label>
+                <select name="city2" id="city2" required>
+                    <option value="">Select City</option>
+                    {% for city in available_cities %}
+                        <option value="{{ city }}">{{ city }}</option>
+                    {% endfor %}
+                </select>
+        
+                <div id="network-options">
+                    <!-- Network checkboxes will be populated here -->
+                </div>
+        
+                <button type="submit" id="compare-button">Compare Networks</button>
+            </form>
+        
+            {% if networks is defined and not networks.empty %}
+                <h2>Results</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>City</th>
+                            <th>Network</th>
+                            <th>Avg Download (Mbps)</th>
+                            <th>Avg Upload (Mbps)</th>
+                            <th>Avg Latency (ms)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for _, row in networks.iterrows() %}
+                            <tr>
+                                <td>{{ row['city'] }}</td>
+                                <td>{{ row['isp'] }}</td>
+                                <td>{{ row['avg_download_mbps']|round(2) }}</td>
+                                <td>{{ row['avg_upload_mbps']|round(2) }}</td>
+                                <td>{{ row['avg_latency']|round(2) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <div id="histogramContainer">
+                    <canvas id="histogramCanvas" width="800" height="400"></canvas>
+                </div>
+            {% endif %}
+        </div>
+        
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const city1Select = document.getElementById('city1');
+                const city2Select = document.getElementById('city2');
+                const networkOptions = document.getElementById('network-options');
+        
+                // Geolocation detection
+                function getLocation() {
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(showPosition, showError);
+                    } else {
+                        city1Select.innerHTML = "<option value=''>Geolocation not supported</option>";
+                    }
+                }
+
+                function showPosition(position) {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    getCityFromCoordinates(lat, lon);
+                }
+
+                function showError(error) {
+                    city1Select.innerHTML = "<option value=''>Unable to detect city</option>";
+                }
+
+                function getCityFromCoordinates(lat, lon) {
+                    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`;
+                    fetch(url)
+                        .then(response => response.json())
+                        .then(data => {
+                            const city = data.address.city || data.address.town || data.address.village || 'Unknown';
+                            selectCity(city);
+                        })
+                        .catch(err => console.error(err));
+                }
+
+                function selectCity(city) {
+                    let found = false;
+                    for (let i = 0; i < city1Select.options.length; i++) {
+                        if (city1Select.options[i].value === city) {
+                            city1Select.selectedIndex = i;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        city1Select.innerHTML = `<option value='${city}'>${city} (Detected)</option>`;
+                    }
+                    updateCity2Options(city); // Update City 2
+                }
+
+                // Function to update City 2 dropdown with common networks
+                function updateCity2Options(city1) {
+                    fetch(`/get_common_cities?city1=${city1}`)
+                        .then(response => response.json())
+                        .then(cities => {
+                            city2Select.innerHTML = cities.map(city => `<option value="${city}">${city}</option>`).join('');
+                        });
+                }
+
+                // Call geolocation on page load
+                window.onload = getLocation;
+
+                city1Select.addEventListener('change', function() {
+                    updateCity2Options(this.value);
+                });
+
+                city2Select.addEventListener('click', function() {
+                    const city1 = city1Select.value;
+                    const city2 = city2Select.value;
+                    if (city1 && city2) {
+                        fetch(`/get_common_networks?city1=${city1}&city2=${city2}`)
+                            .then(response => response.json())
+                            .then(networks => {
+                                networkOptions.innerHTML = networks.map(network => `
+                                    <label>
+                                        <input type="checkbox" name="networks" value="${network}">
+                                        ${network}
+                                    </label>
+                                `).join('');
+                            });
+                    }
+                });
+            });
+        </script>
+        
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                // Chart rendering logic
+                const labels = [];
+                const city1Download = [];
+                const city1Upload = [];
+                const city1Latency = [];
+                const city2Download = [];
+                const city2Upload = [];
+                const city2Latency = [];
+
+                document.querySelectorAll('tbody tr').forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    labels.push(cells[1].innerText);
+                    if (cells[0].innerText === '{{ city1 }}') {
+                        city1Download.push(parseFloat(cells[2].innerText));
+                        city1Upload.push(parseFloat(cells[3].innerText));
+                        city1Latency.push(parseFloat(cells[4].innerText));
+                    } else if (cells[0].innerText === '{{ city2 }}') {
+                        city2Download.push(parseFloat(cells[2].innerText));
+                        city2Upload.push(parseFloat(cells[3].innerText));
+                        city2Latency.push(parseFloat(cells[4].innerText));
+                    }
+                });
+
+                const ctx = document.getElementById('histogramCanvas').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels.slice(0, labels.length / 2),
+                        datasets: [
+                            { label: `{{ city1 }} Download`, data: city1Download, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 },
+                            { label: `{{ city2 }} Download`, data: city2Download, backgroundColor: 'rgba(54, 162, 235, 0.3)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 },
+                            { label: `{{ city1 }} Upload`, data: city1Upload, backgroundColor: 'rgba(255, 99, 132, 0.6)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1 },
+                            { label: `{{ city2 }} Upload`, data: city2Upload, backgroundColor: 'rgba(255, 99, 132, 0.3)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1 },
+                            { label: `{{ city1 }} Latency`, data: city1Latency, backgroundColor: 'rgba(75, 192, 192, 0.6)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1 },
+                            { label: `{{ city2 }} Latency`, data: city2Latency, backgroundColor: 'rgba(75, 192, 192, 0.3)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            });
+        </script>
+    </main>
+
+    <script>
+        function openNav() {
+            document.getElementById("sidebar").style.width = "250px";
+            document.getElementById("openSidebar").style.display = "none";
+        }
+        function closeNav() {
+            document.getElementById("sidebar").style.width = "0";
+            document.getElementById("openSidebar").style.display = "block";
+        }
+    </script>
+</body>
+</html>
